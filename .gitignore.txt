@@ -1,0 +1,15 @@
+# Ignore specific files
+largefile.zip
+secrets.env
+
+# Ignore all files in a directory
+/temp/
+
+# Ignore all `.log` files in the repository
+*.log
+
+# Ignore all `.csv` files in a specific folder
+Flight delay prediction/2022_Flights.csv
+
+# Ignore all files except a specific one
+!.gitignore
