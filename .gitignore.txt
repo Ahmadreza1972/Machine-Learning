@@ -9,7 +9,7 @@ secrets.env
 *.log
 
 # Ignore a specific file within a folder (ensure the path is correct)
-C:\Users\ahmad\OneDrive\Learnings\git repository\Machine-Learning\Flight delay prediction\2022_Flights.csv
+Flight delay prediction\2022_Flights.csv
 
 # Ignore all files except this one
 !.gitignore
