@@ -8,6 +8,7 @@ import torch.nn.functional as F
 import torch.optim as optim
 from tqdm import tqdm
 from torchvision import transforms
+from torch.utils.data import random_split
 
 
 print(torch.__version__)
@@ -44,7 +45,7 @@ def remap_labels(labels, class_mapping):
     return [class_mapping[label] for label in labels]
 
 class CNNModel(nn.Module):
-    def __init__(self, input_channels=3, num_classes=10, conv_layers_config=None, fc_layers_config=None):
+    def __init__(self, input_channels, num_classes, conv_layers_config, fc_layers_config):
         """
         A dynamic CNN model using ModuleDict.
         Args:
@@ -58,12 +59,6 @@ class CNNModel(nn.Module):
         self.num_classes = num_classes
         self.features = nn.ModuleDict()
 
-        # Default convolutional layers config if none provided
-        if conv_layers_config is None:
-            conv_layers_config = [
-                {"out_channels": 32, "kernel_size": 3, "stride": 1, "padding": 1},
-                {"out_channels": 64, "kernel_size": 3, "stride": 1, "padding": 1},
-            ]
 
         # Add convolutional layers dynamically
         in_channels = input_channels
@@ -76,12 +71,12 @@ class CNNModel(nn.Module):
                 padding=layer_config["padding"],
             )
             self.features[f"relu{i+1}"] = nn.ReLU()
-            self.features[f"pool{i+1}"] = nn.MaxPool2d(kernel_size=2, stride=2)
+            self.features[f"pool{i+1}"] = nn.MaxPool2d(kernel_size=layer_config["maxpool"], stride=2)
             in_channels = layer_config["out_channels"]
 
         # Fully connected layer configuration
         self.flatten_size = None  # Will be dynamically determined
-        self.fc_layers_config = fc_layers_config or [128]
+        self.fc_layers_config = fc_layers_config
         self.fc = nn.ModuleDict()  # Fully connected layers
 
         # Dropout
@@ -114,7 +109,7 @@ class CNNModel(nn.Module):
 
 
 
-def train_model(model, dataloader, num_epochs=100, lr=0.001, device="cuda" if torch.cuda.is_available() else "cpu"):
+def train_model(model, dataloader,val_loader, num_epochs, lr, device="cuda" if torch.cuda.is_available() else "cpu"):
     """
     Trains a given CNN model using the provided DataLoader.
 
@@ -132,6 +127,9 @@ def train_model(model, dataloader, num_epochs=100, lr=0.001, device="cuda" if to
     # Define optimizer and loss function
     optimizer = optim.Adam(model.parameters(), lr=lr)
     criterion = nn.CrossEntropyLoss()
+    
+    train_losses = []
+    val_losses = []
 
     # Training loop
     for epoch in range(num_epochs):
@@ -158,8 +156,25 @@ def train_model(model, dataloader, num_epochs=100, lr=0.001, device="cuda" if to
 
         # Print epoch loss
         epoch_loss = running_loss / len(dataloader)
+        train_losses.append(epoch_loss)
         print(f"Epoch {epoch+1}/{num_epochs}, Loss: {epoch_loss:.4f}")
+        
+        # Validation loss
+        model.eval()
+        running_val_loss = 0.0
+        with torch.no_grad():
+            for inputs, labels in val_loader:
+                inputs, labels = inputs.to(device), labels.to(device)
+                outputs = model(inputs)
+                loss = criterion(outputs, labels)
+                running_val_loss += loss.item()
+
+        epoch_val_loss = running_val_loss / len(val_loader)
+        val_losses.append(epoch_val_loss)
+
+        
     print("Training complete!")
+    return train_losses,val_losses
 
 
 def test_model(model, dataloader, device="cuda" if torch.cuda.is_available() else "cpu"):
@@ -207,7 +222,7 @@ def get_total_params(model):
     total_params = sum(p.numel() for p in model.parameters())
     return total_params
 
-def data_train_loader():
+def data_train_loader(validat_rate):
     train_data, labels, idx = load_data('Image classifiers\data\Model1\model1_train.pth')
     classes = load_class_names('Image classifiers\data\cifar100_classes.txt')
     unique_labels = sorted(set(labels))
@@ -222,8 +237,17 @@ def data_train_loader():
     ])
     
     my_dataset = ClassDataset(train_data, remapped_labels, transform=train_transform)
-    dataloader = DataLoader(my_dataset, batch_size=batch_size, shuffle=True)
-    return dataloader
+    
+    # Split dataset into training and validation (80% training, 20% validation)
+    train_size = int((1-validat_rate) * len(my_dataset))
+    val_size = len(my_dataset) - train_size
+    train_dataset, val_dataset = random_split(my_dataset, [train_size, val_size])
+
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+    
+    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
+    
+    return train_loader,val_loader
 
 def data_test_loader():
     train_data, labels, idx = load_data('Image classifiers\data\Model1\model1_test.pth')
@@ -238,28 +262,38 @@ def data_test_loader():
 
 
 if __name__ == '__main__':
-    batch_size=64
-    train_loader=data_train_loader()
-    test_loader=data_test_loader()
+    
+    validat_rate=0.2
+    batch_size=32
+    pic_layers=3
+    num_classes=5
+    learning_rate=0.0005
+    num_epochs=200
+    
     
     conv_config = [
-        {"out_channels": 16, "kernel_size": 3, "stride": 1, "padding": 1},
-        {"out_channels": 32, "kernel_size": 3, "stride": 1, "padding": 1},
-        {"out_channels": 64, "kernel_size": 3, "stride": 1, "padding": 1},
-        {"out_channels": 128, "kernel_size": 3, "stride": 1, "padding": 1},
-        {"out_channels": 128, "kernel_size": 3, "stride": 1, "padding": 1}
+        {"out_channels": 32, "kernel_size": 3, "stride": 1, "padding": 1,"maxpool":2},
+        {"out_channels": 64, "kernel_size": 3, "stride": 1, "padding": 1,"maxpool":2},
+        {"out_channels": 128, "kernel_size": 3, "stride": 1, "padding": 1,"maxpool":2},
+        {"out_channels": 256, "kernel_size": 3, "stride": 1, "padding": 1,"maxpool":2}
     ]
+    fc_config = [256, 128,64]
     
-    fc_config = [512, 256, 128]
+    train_loader,val_loader=data_train_loader(validat_rate)
+    test_loader=data_test_loader()
     
     
-    
-    model = CNNModel(input_channels=3, num_classes=5, conv_layers_config=conv_config, fc_layers_config=fc_config)
+    model = CNNModel(input_channels=pic_layers, num_classes=num_classes, conv_layers_config=conv_config, fc_layers_config=fc_config)
     print(model)
     total_params = get_total_params(model)
     print(f"Total number of parameters: {total_params}")
     
-    train_model(model, train_loader, num_epochs=50, lr=0.001)
+    train_losses,val_losses=train_model(model, train_loader,val_loader, num_epochs=num_epochs, lr=learning_rate)
     test_model(model, test_loader)
+    plt.plot(train_losses,label="Train")
+    plt.plot(val_losses,label="Test")
+    plt.legend()
+    plt.show()
+    
     
   
