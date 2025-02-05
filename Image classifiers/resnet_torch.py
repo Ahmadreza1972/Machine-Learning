@@ -41,12 +41,27 @@ def load_class_names(filepath):
 def remap_labels(labels, class_mapping):
     return [class_mapping[label] for label in labels]
 
-def get_total_params(model):
-    total_params = sum(p.numel() for p in model.parameters())
-    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    return total_params, trainable_params
+
 
 # ResNet Model Wrapper
+import torch
+import torch.nn as nn
+from torchvision import models
+
+import torch
+import torch.nn as nn
+from torchvision import models
+
+import torch
+import torch.nn as nn
+from torchvision import models
+
+import torch
+import torch.nn as nn
+from torchvision import models
+
+from prettytable import PrettyTable
+
 class DynamicResNet(nn.Module):
     def __init__(self, resnet_type, num_classes, pretrained=True):
         """
@@ -57,7 +72,7 @@ class DynamicResNet(nn.Module):
             pretrained (bool): Whether to use pretrained weights.
         """
         super(DynamicResNet, self).__init__()
-        self.resnet = getattr(models, resnet_type)(pretrained=pretrained)  # Dynamically load ResNet
+        self.resnet =models.resnet18(pretrained=True)
 
         # Modify the final fully connected layer to match the number of classes
         in_features = self.resnet.fc.in_features
@@ -65,6 +80,7 @@ class DynamicResNet(nn.Module):
 
     def forward(self, x):
         return self.resnet(x)
+
 
 # Training function
 def train_model(model, dataloader, val_loader, num_epochs, lr, device):
@@ -165,6 +181,23 @@ def data_test_loader(batch_size):
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
     return dataloader
 
+def get_total_params(model):
+    table = PrettyTable(["Modules", "Parameters"])
+    total_params = 0
+    for name, parameter in model.named_parameters():
+        if "layer1" in name or "layer2" in name or "layer3" in name or "layer4" in name:
+            parameter.requires_grad = False
+    
+    for name, parameter in model.named_parameters():        
+        if not parameter.requires_grad:
+            continue
+        params = parameter.numel()
+        table.add_row([name, params])
+        total_params += params
+    print(table)
+    print(f"Total Trainable Params: {total_params}")
+    #return total_params, trainable_params
+
 # Main script
 if __name__ == '__main__':
     validat_rate = 0.2
@@ -172,15 +205,16 @@ if __name__ == '__main__':
     num_classes = 5
     learning_rate = 0.0005
     num_epochs = 20
-    resnet_type = "resnet18"  # Change this to resnet34, resnet50, etc.
+    resnet_type = "resnet50"  # resnet18 resnet34, resnet50, etc.
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
     train_loader, val_loader = data_train_loader(validat_rate, batch_size)
     test_loader = data_test_loader(batch_size)
 
-    model = DynamicResNet(resnet_type=resnet_type, num_classes=num_classes)
-    total_params, trainable_params = get_total_params(model)
-    print(total_params,trainable_params)
+    model = DynamicResNet(resnet_type=resnet_type, num_classes=num_classes,pretrained=True)
+    #total_params, trainable_params = get_total_params(model)
+    get_total_params(model)
+    #print(f"{total_params}-{trainable_params}")
 
     train_losses, val_losses = train_model(model, train_loader, val_loader, num_epochs, learning_rate, device)
     test_model(model, test_loader, device)

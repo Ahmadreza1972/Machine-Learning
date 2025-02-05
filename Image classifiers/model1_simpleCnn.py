@@ -1,7 +1,6 @@
 import torch
 from torch.utils.data import DataLoader, Dataset
 from torchvision.transforms import ToTensor
-from torchvision.utils import make_grid
 import matplotlib.pyplot as plt
 import torch.nn as nn
 import torch.nn.functional as F
@@ -135,7 +134,8 @@ def train_model(model, dataloader,val_loader, num_epochs, lr, device="cuda" if t
     for epoch in range(num_epochs):
         model.train()  # Set model to training mode
         running_loss = 0.0
-
+        correct = 0
+        total=0
         # Iterate over batches
         for inputs, labels in tqdm(dataloader, desc=f"Epoch {epoch+1}/{num_epochs}"):
             inputs, labels = inputs.to(device), labels.to(device)
@@ -153,25 +153,36 @@ def train_model(model, dataloader,val_loader, num_epochs, lr, device="cuda" if t
 
             # Accumulate loss
             running_loss += loss.item()
+            _, predicted = torch.max(outputs, 1)
+            correct += (predicted == labels).sum().item()
+            total += labels.size(0)
+            
 
         # Print epoch loss
+        accuracy = 100 * correct / total
         epoch_loss = running_loss / len(dataloader)
         train_losses.append(epoch_loss)
-        print(f"Epoch {epoch+1}/{num_epochs}, Loss: {epoch_loss:.4f}")
+        
         
         # Validation loss
         model.eval()
         running_val_loss = 0.0
+        val_correct = 0
+        val_total=0
         with torch.no_grad():
             for inputs, labels in val_loader:
                 inputs, labels = inputs.to(device), labels.to(device)
                 outputs = model(inputs)
                 loss = criterion(outputs, labels)
                 running_val_loss += loss.item()
-
+                _, predicted = torch.max(outputs, 1)
+                val_correct += (predicted == labels).sum().item()
+                val_total += labels.size(0)
+        val_accuracy = 100 * val_correct / val_total
         epoch_val_loss = running_val_loss / len(val_loader)
         val_losses.append(epoch_val_loss)
 
+        print(f"Epoch {epoch+1}/{num_epochs}, Loss_train: {epoch_loss:.4f}, Loss_val:{epoch_val_loss}, accuracy_train:{accuracy}, accuracy_val:{val_accuracy}, total_train:{total},total_val:{val_total}")
         
     print("Training complete!")
     return train_losses,val_losses
@@ -263,7 +274,7 @@ def data_test_loader():
 
 if __name__ == '__main__':
     
-    validat_rate=0.2
+    validat_rate=0.1
     batch_size=32
     pic_layers=3
     num_classes=5
@@ -275,7 +286,8 @@ if __name__ == '__main__':
         {"out_channels": 32, "kernel_size": 3, "stride": 1, "padding": 1,"maxpool":2},
         {"out_channels": 64, "kernel_size": 3, "stride": 1, "padding": 1,"maxpool":2},
         {"out_channels": 128, "kernel_size": 3, "stride": 1, "padding": 1,"maxpool":2},
-        {"out_channels": 256, "kernel_size": 3, "stride": 1, "padding": 1,"maxpool":2}
+        {"out_channels": 256, "kernel_size": 3, "stride": 1, "padding": 1,"maxpool":2},
+        {"out_channels": 512, "kernel_size": 3, "stride": 1, "padding": 1,"maxpool":2}
     ]
     fc_config = [256, 128,64]
     
