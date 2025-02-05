@@ -44,20 +44,21 @@ def remap_labels(labels, class_mapping):
     return [class_mapping[label] for label in labels]
 
 class CNNModel(nn.Module):
-    def __init__(self, input_channels, num_classes, conv_layers_config, fc_layers_config):
+    def __init__(self, input_channels, num_classes, conv_layers_config, fc_layers_config, reg_lambda=1e-4):
         """
-        A dynamic CNN model using ModuleDict.
+        A dynamic CNN model using ModuleDict with L2 regularization.
         Args:
             input_channels (int): Number of input channels (e.g., 3 for RGB images).
             num_classes (int): Number of output classes for classification.
             conv_layers_config (list of dict): Configuration for convolutional layers.
             fc_layers_config (list of int): Configuration for fully connected layers.
+            reg_lambda (float): Regularization strength (L2 penalty).
         """
         super(CNNModel, self).__init__()
 
         self.num_classes = num_classes
         self.features = nn.ModuleDict()
-
+        self.reg_lambda = reg_lambda  # Regularization strength
 
         # Add convolutional layers dynamically
         in_channels = input_channels
@@ -82,9 +83,14 @@ class CNNModel(nn.Module):
         self.dropout = nn.Dropout(0.5)
 
     def forward(self, x):
+        reg_loss = 0  # Initialize regularization loss
+
         # Forward pass through convolutional layers
         for layer in self.features.values():
             x = layer(x)
+            # Accumulate L2 regularization loss for convolutional layers
+            if isinstance(layer, nn.Conv2d):  # Regularization only for weight layers
+                reg_loss += self.reg_lambda * torch.sum(layer.weight ** 2)
 
         # Flatten the feature map
         if self.flatten_size is None:
@@ -100,10 +106,13 @@ class CNNModel(nn.Module):
         # Forward pass through fully connected layers
         for name, layer in self.fc.items():
             x = F.relu(layer(x)) if name != "output" else layer(x)
+            # Accumulate L2 regularization loss for fully connected layers
+            if hasattr(layer, "weight"):
+                reg_loss += self.reg_lambda * torch.sum(layer.weight ** 2)
             if "fc" in name:  # Apply dropout only on hidden layers
                 x = self.dropout(x)
 
-        return x
+        return x, reg_loss
 
 
 
@@ -144,8 +153,8 @@ def train_model(model, dataloader,val_loader, num_epochs, lr, device="cuda" if t
             optimizer.zero_grad()
 
             # Forward pass
-            outputs = model(inputs)
-            loss = criterion(outputs, labels)
+            outputs,reg_loss = model(inputs)
+            loss = criterion(outputs, labels)+reg_loss
 
             # Backward pass and optimization
             loss.backward()
@@ -172,7 +181,7 @@ def train_model(model, dataloader,val_loader, num_epochs, lr, device="cuda" if t
         with torch.no_grad():
             for inputs, labels in val_loader:
                 inputs, labels = inputs.to(device), labels.to(device)
-                outputs = model(inputs)
+                outputs,regloss = model(inputs)
                 loss = criterion(outputs, labels)
                 running_val_loss += loss.item()
                 _, predicted = torch.max(outputs, 1)
@@ -211,7 +220,7 @@ def test_model(model, dataloader, device="cuda" if torch.cuda.is_available() els
             inputs, labels = inputs.to(device), labels.to(device)
 
             # Forward pass
-            outputs = model(inputs)
+            outputs ,regloss= model(inputs)
             loss = criterion(outputs, labels)
 
             # Calculate accuracy
@@ -241,8 +250,8 @@ def data_train_loader(validat_rate):
     remapped_labels = remap_labels(labels, class_mapping)
     # Define data augmentation transformations
     train_transform = transforms.Compose([
-        transforms.RandomHorizontalFlip(),  # Randomly flip the image horizontally
-        transforms.RandomCrop(32, padding=4),  # Randomly crop and pad the image
+        #transforms.RandomHorizontalFlip(),  # Randomly flip the image horizontally
+        #transforms.RandomCrop(32, padding=4),  # Randomly crop and pad the image
         transforms.ToTensor(),  # Convert the image to a tensor
         transforms.Normalize(mean=[0.4914, 0.4822, 0.4465], std=[0.2470, 0.2435, 0.2616])  # Normalize with CIFAR-100 mean and std
     ])
@@ -295,7 +304,7 @@ if __name__ == '__main__':
     test_loader=data_test_loader()
     
     
-    model = CNNModel(input_channels=pic_layers, num_classes=num_classes, conv_layers_config=conv_config, fc_layers_config=fc_config)
+    model = CNNModel(input_channels=pic_layers, num_classes=num_classes, conv_layers_config=conv_config, fc_layers_config=fc_config, reg_lambda=0.001)
     print(model)
     total_params = get_total_params(model)
     print(f"Total number of parameters: {total_params}")
