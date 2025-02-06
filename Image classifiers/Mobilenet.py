@@ -56,18 +56,60 @@ def create_dataloader(images, labels, batch_size=32, shuffle=True):
     return dataloader,unique_labels
 
 # Define ResNet18 model with control over trainable layers
+#class MobileNetV2ForCIFAR8M(nn.Module):
+#    def __init__(self, num_classes=10):
+#        super(MobileNetV2ForCIFAR8M, self).__init__()
+#        
+#        # Load the pre-trained MobileNetV2 model
+#        self.mobilenet_v2 = models.mobilenet_v2(pretrained=True)
+#        layer_count = 0
+#        for name, layer in self.mobilenet_v2.named_children():
+#            print(f"{name}: {layer}")
+#            layer_count += 1
+#
+#        print(f"\nTotal number of layers (top-level children): {layer_count}")
+#
+#        # Replace the final classifier layer to match the number of classes
+#        self.mobilenet_v2.classifier[1] = nn.Linear(self.mobilenet_v2.last_channel, num_classes)
+#
+#    def forward(self, x):
+#        return self.mobilenet_v2(x)
+
 class MobileNetV2ForCIFAR8M(nn.Module):
-    def __init__(self, num_classes=10):
+    def __init__(self, num_classes=5, num_layers_to_keep=10):
         super(MobileNetV2ForCIFAR8M, self).__init__()
         
         # Load the pre-trained MobileNetV2 model
         self.mobilenet_v2 = models.mobilenet_v2(pretrained=True)
-
-        # Replace the final classifier layer to match the number of classes
-        self.mobilenet_v2.classifier[1] = nn.Linear(self.mobilenet_v2.last_channel, num_classes)
+        
+        # Keep only the first `num_layers_to_keep` layers of the feature extractor
+        self.mobilenet_v2.features = nn.Sequential(
+            *list(self.mobilenet_v2.features[:num_layers_to_keep])
+        )
+        
+        # Calculate the output size after the truncated feature extractor
+        sample_input = torch.randn(1, 3, 32, 32)  # Example input size for MobileNetV2
+        with torch.no_grad():
+            output_shape = self.mobilenet_v2.features(sample_input).shape
+            print("Output shape after truncation:", output_shape)
+        flattened_features = output_shape[1] * output_shape[2] * output_shape[3]
+        print("Flattened feature size:", flattened_features)
+        # Replace the final classifier to match the new output size and number of classes
+        self.mobilenet_v2.classifier = nn.Sequential(
+            nn.Flatten(),
+            nn.Linear(flattened_features, 512),  # Example: Intermediate layer size
+            nn.ReLU(),
+            nn.Dropout(0.5),
+            nn.Linear(512, num_classes)  # Final layer matches the number of classes
+        )
 
     def forward(self, x):
-        return self.mobilenet_v2(x)
+        x = self.mobilenet_v2.features(x)
+        return self.mobilenet_v2.classifier(x)
+
+# Example usage
+model = MobileNetV2ForCIFAR8M(num_classes=5, num_layers_to_keep=10)
+print(model)
 
 # Training function
 def train_model(model, train_loader,val_loader, criterion, optimizer, num_epochs=10, device='cpu'):
@@ -164,9 +206,9 @@ def main():
     validation_size=0.2
     batch_size = 16
     learning_rate = 0.001
-    epoch = 1
-    train_path = r"Image classifiers\data\Model3\model3_train.pth"  # Raw string for Windows paths
-    test_path = r"Image classifiers\data\Model3\model3_test.pth"
+    epoch = 70
+    train_path = r"Image classifiers\data\Model1\model1_train.pth"  # Raw string for Windows paths
+    test_path = r"Image classifiers\data\Model1\model1_test.pth"
     classes = load_class_names('Image classifiers\data\cifar100_classes.txt')
     # Load data
     images, labels, indices = load_data(train_path)
@@ -223,13 +265,6 @@ def main():
 
     #pic(test_unique_labels,classes,test_loader,predicted,lal)
         # Loop through each image in the batch
-
-        
-    
-    
-
-    
-    
     fig,ax=plt.subplots(ncols=2)
     ax[0].plot(tr_ac, label="Train_ac")
     ax[0].plot(val_ac, label="val_ac")
