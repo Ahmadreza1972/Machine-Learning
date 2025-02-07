@@ -5,6 +5,7 @@ from torch.utils.data import DataLoader, TensorDataset, random_split
 import torchvision.models as models
 import torchvision.transforms as transforms
 from tqdm import tqdm
+import matplotlib.pyplot as plt
 
 # Load dataset from .pth file
 def load_data(data_path):
@@ -37,13 +38,14 @@ class CustomResNet18(nn.Module):
         # Adjust the first convolutional layer for 32x32 input
         self.resnet18.conv1 = nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1, bias=False)
         self.resnet18.maxpool = nn.Identity()  # Remove maxpool for smaller images
+        self.resnet18.layer4 = nn.Identity()
         
         # Freeze layers if specified
         if freeze_layers:
             for param in self.resnet18.parameters():
                 param.requires_grad = False
         
-        in_features = self.resnet18.fc.in_features
+        in_features = 256
         self.resnet18.fc = nn.Linear(in_features, num_classes)
 
     def forward(self, x):
@@ -52,6 +54,11 @@ class CustomResNet18(nn.Module):
 # Training function
 def train_model(model, train_loader,val_loader, criterion, optimizer, num_epochs=10, device='cpu'):
     model.to(device)
+    
+    tr_los=[]
+    tr_ac=[]
+    val_los=[]
+    val_ac=[]
     for epoch in range(num_epochs):
         model.train()
         correct = 0
@@ -77,6 +84,8 @@ def train_model(model, train_loader,val_loader, criterion, optimizer, num_epochs
             total += labels.size(0)
             correct += (predicted == labels).sum().item()
         accuracy = 100 * correct / total
+        tr_los.append(running_loss/len(train_loader))
+        tr_ac.append(accuracy)
         
         
         model.eval()  # Set model to evaluation mode
@@ -97,11 +106,13 @@ def train_model(model, train_loader,val_loader, criterion, optimizer, num_epochs
                 val_correct += (predicted == labels).sum().item()
 
         val_accuracy = 100 * val_correct / val_total
+        val_los.append(val_running_loss/len(val_loader))
+        val_ac.append(val_accuracy)
         
         
         
         print(f"                    Tr_Loss: {running_loss/len(train_loader):.4f}, val_loss: {val_running_loss/len(val_loader):.4f}, Tr_acc: {accuracy}, val_ac: {val_accuracy}")
-
+    return tr_ac,val_ac,tr_los,val_los
 # Test function
 def test_model(model, test_loader, criterion, device='cpu'):
     model.to(device)
@@ -134,7 +145,7 @@ def main():
 
     batch_size = 16
     learning_rate = 0.001
-    epoch = 70
+    epoch = 35
     valdata_ratio=0.1
     train_path = r"Image classifiers\data\Model1\model1_train.pth"  # Raw string for Windows paths
     test_path = r"Image classifiers\data\Model1\model1_test.pth"
@@ -168,6 +179,7 @@ def main():
     # Initialize model
     num_classes = len(torch.unique(torch.tensor(labels)))  # Number of unique classes
     model = CustomResNet18(num_classes=num_classes, freeze_layers=False)
+    print(model)
 
     # Define loss and optimizer
     criterion = nn.CrossEntropyLoss()
@@ -175,7 +187,16 @@ def main():
     trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print(f"Number of trainable parameters after freezing layers: {trainable_params}")
     # Train model
-    train_model(model, train_loader,val_loader, criterion, optimizer, num_epochs=epoch, device=device)
+    tr_ac,val_ac,tr_los,val_los=train_model(model, train_loader,val_loader, criterion, optimizer, num_epochs=epoch, device=device)
+    torch.save(model.state_dict(), "model_weights.pth")
+    fig,ax=plt.subplots(ncols=2)
+    ax[0].plot(tr_ac, label="Train_ac")
+    ax[0].plot(val_ac, label="val_ac")
+    ax[0].legend()
+    ax[1].plot(tr_los, label="Train_los")
+    ax[1].plot(val_los, label="val_los")
+    ax[1].legend()
+    plt.show()
 
     # Load and transform test data
     test_images, test_labels, test_indices = load_data(test_path)

@@ -253,7 +253,7 @@ def main():
     print(f"Number of trainable parameters after freezing layers: {trainable_params}")
     # Train model
     tr_ac,val_ac,tr_los,val_los=train_model(model, train_loader,val_loader, criterion, optimizer, num_epochs=epoch, device=device)
-
+    
     # Load and transform test data
     test_images, test_labels, test_indices = load_data(test_path)
     test_images_pil = [transforms.ToPILImage()(img) for img in test_images]
