@@ -5,6 +5,29 @@ from CustomResNet18 import CustomResNet18
 from DataLoad import DataLoad
 from torch.utils.data import DataLoader, TensorDataset
 import numpy as np
+from torchvision.utils import make_grid
+import matplotlib.pyplot  as plt
+
+
+def load_class_names(filepath):
+    with open(filepath, 'r') as file:
+        classes = [line.strip() for line in file]
+    return classes
+
+def pic(classes,true_classes, my_predict, data):
+
+    
+
+    true_classes_name = classes[true_classes]
+
+    my_predict_name = classes[my_predict] 
+    
+    grid_img = make_grid(data[0].unsqueeze(0), nrow=1)  
+    plt.imshow(grid_img.permute(1, 2, 0))  
+    plt.title(f"Predicted: {my_predict_name}, True: {true_classes_name}")
+    plt.axis('off') 
+    plt.show()
+
 
 
 def get_predictions_and_probabilities(model, orginallabels,dataloader, device='cpu'):
@@ -126,6 +149,7 @@ def main():
 
     total_correct=0
     total=0
+    classes = load_class_names('Image classifiers\ResNet\cifar100_classes.txt')
     for data,label,orglabel in dataloader:
         pr1=max(results[0]["probabilities"][total])
         pr2=max(results[1]["probabilities"][total])
@@ -136,8 +160,13 @@ def main():
         true_labels=results[elected]["true_labels"][total]
         predictedlabel=orginallabels[elected][results[elected]["predicted_labels"][total]]
         total+=1
+        
+        pic(classes,true_labels, predictedlabel, data)
+        
         if (true_labels==predictedlabel):
             total_correct+=1
+            
+            
     print(total_correct/total)
     
     
